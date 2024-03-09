@@ -1,86 +1,8 @@
-from datetime import datetime
-from collections import defaultdict, UserDict
+import pickle
 
-
-class Field:
-    def __init__(self, value):
-        self.value = value
-
-
-class Name(Field):
-    pass
-
-
-class Phone(Field):
-    def __init__(self, value):
-        if not value.isdigit() or len(value) != 10:
-            raise ValueError("Phone number must be 10 digits.")
-        super().__init__(value)
-
-
-class Record:
-    def __init__(self, name):
-        self.name = Name(name)
-        self.phones = []
-
-    def add_phone(self, phone):
-        self.phones.append(Phone(phone))
-
-    def remove_phone(self, phone):
-        self.phones = [p for p in self.phones if p.value != phone]
-
-    def edit_phone(self, old_phone, new_phone):
-        for p in self.phones:
-            if p.value == old_phone:
-                p.value = new_phone
-                break
-
-    def find_phone(self, phone):
-        return next((p for p in self.phones if p.value == phone), None)
-
-
-class AddressBook(UserDict):
-    def add_record(self, record):
-        self.data[record.name.value] = record
-
-    def find(self, name):
-        return self.data.get(name)
-
-    def delete(self, name):
-        if name in self.data:
-            del self.data[name]
-        else:
-            raise KeyError("No such contact found.")
-
-
-def get_birthdays_per_week(users):
-    today = datetime.today().date()
-    weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    weekend = ['Saturday', 'Sunday']
-
-    birthdays_by_weekday = defaultdict(list)
-
-    for user in users:
-        name = user["name"]
-        birthday = user["birthday"].date()
-
-        birthday_this_year = birthday.replace(year=today.year)
-
-        if birthday_this_year < today:
-            birthday_this_year = birthday_this_year.replace(year=today.year + 1)
-
-        delta_days = (birthday_this_year - today).days
-
-        if 0 <= delta_days < 7:
-            weekday = weekdays[(today.weekday() + delta_days) % 7]
-
-            if weekday in weekend:
-                weekday = 'Monday'
-
-            birthdays_by_weekday[weekday].append(name)
-
-    for weekday, names in birthdays_by_weekday.items():
-        print(f"{weekday}: {', '.join(names)}")
+from Models.address_book import AddressBook
+from Models.phone import Phone
+from Models.record import Record
 
 
 def input_error(func):
@@ -106,33 +28,69 @@ def parse_input(user_input):
 
 
 @input_error
-def add_contact(args, contacts):
+def add_contact(args, address_book):
     name, phone = args
-    contacts[name] = phone
+    record = Record(name)
+    record.add_phone(phone)
+    address_book.add_record(record)
     return "Contact added."
 
 
 @input_error
-def change_contact(args, contacts):
+def change_contact(args, address_book):
     name, new_phone = args
-    contacts[name] = new_phone
+    record = address_book.data[name]
+    record.phones = [Phone(new_phone)]
     return "Contact updated."
 
 
 @input_error
-def show_phone(args, contacts):
+def show_phone(args, address_book):
     name = args[0]
-    return contacts[name]
+    phones = [phone.value for phone in address_book.data[name].phones]
+    return ", ".join(phones)
 
 
 @input_error
-def show_all(contacts):
-    for name, phone in contacts.items():
-        print(f"{name}: {phone}")
+def show_all(address_book):
+    for name, record in address_book.items():
+        phones = ', '.join([phone.value for phone in record.phones])
+        print(f"{name}: {phones}, Birthday: {record.birthday.value if record.birthday else 'Not set'}")
+
+
+@input_error
+def add_birthday(args, address_book):
+    name, birthday = args
+    address_book[name].add_birthday(birthday)
+    return f"Birthday added for {name}."
+
+
+@input_error
+def show_birthday(args, address_book):
+    name = args[0]
+    contact = address_book.get(name, None)
+    if contact and contact.birthday:
+        return f"{name}'s birthday is on {contact.birthday.value}."
+    return "Birthday not set or contact not found."
+
+
+@input_error
+def save_address_book(book, filename="addressbook.data"):
+    with open(filename, "wb") as file:
+        pickle.dump(book, file)
+
+
+@input_error
+def load_address_book(filename="addressbook.data"):
+    try:
+        with open(filename, "rb") as file:
+            return pickle.load(file)
+    except (FileNotFoundError, EOFError):
+        return AddressBook()
 
 
 def main():
-    contacts = {}
+    address_book = load_address_book()
     print("Welcome to the assistant bot!")
     while True:
         user_input = input("Enter a command: ")
@@ -141,17 +99,24 @@ def main():
         match command:
             case "close" | "exit":
                 print("Good bye!")
+                save_address_book(address_book)
                 break
             case "hello":
                 print("How can I help you?")
             case "add":
-                print(add_contact(args, contacts))
+                print(add_contact(args, address_book))
             case "change":
-                print(change_contact(args, contacts))
+                print(change_contact(args, address_book))
             case "phone":
-                print(show_phone(args, contacts))
+                print(show_phone(args, address_book))
             case "all":
-                show_all(contacts)
+                show_all(address_book)
+            case "add-birthday":
+                print(add_birthday(args, address_book))
+            case "show-birthday":
+                print(show_birthday(args, address_book))
+            case "birthdays":
+                address_book.get_birthdays_per_week()
             case _:
                 print("Invalid command.")
 
